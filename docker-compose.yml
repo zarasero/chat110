@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    container_name: cc-app
+    ports:
+      - "443:443" # ✅ HTTPS порт
+    volumes:
+      - ./data:/app/data
+      - ./ssl:/app/ssl # ✅ подключаем сертификаты в контейнер
+    environment:
+      - NODE_ENV=production
+      - PORT=443 # ✅ сервер теперь слушает HTTPS
+    command: ["node", "dist/server.js"]
+    restart: unless-stopped

@@ -1,0 +1,648 @@
+ChatGPT сказал:
+
+Отлично 👌
+Ты хочешь такую же текстовую “схему-карту”, как раньше — только для твоих реальных таблиц (users, messages, blocks, friends, game_invites, match_history, tournament_notifications).
+
+Вот она ↓
+Я сделала её в стиле блоков с комментариями, чтобы можно было читать как “историю” базы.
+
+🗂️ СТРУКТУРА ТВОЕЙ БАЗЫ ДАННЫХ
+👤 users — таблица пользователей
+
+Хранит всех, кто зарегистрирован в чате.
+
+┌──────────────────────────────┐
+│           users              │
+├──────────────────────────────┤
+│ id TEXT PRIMARY KEY          │ ← Уникальный ID (например: user-1)
+│ username TEXT UNIQUE NOT NULL│ ← Имя пользователя
+│ avatar TEXT DEFAULT '👤'     │ ← Эмодзи-аватар
+│ online BOOLEAN DEFAULT 0     │ ← Онлайн / офлайн
+│ last_seen DATETIME           │ ← Когда последний раз был онлайн
+└──────────────────────────────┘
+
+
+📌 Используется:
+
+для списка всех пользователей
+
+чтобы знать, кто сейчас онлайн
+
+чтобы связать сообщения, друзей, блокировки, игры и т.д.
+
+💬 messages — личные сообщения между пользователями
+┌──────────────────────────────┐
+│          messages            │
+├──────────────────────────────┤
+│ id INTEGER PRIMARY KEY AUTOINCREMENT │
+│ sender_id TEXT NOT NULL              │ ← кто отправил (FK → users.id)
+│ receiver_id TEXT NOT NULL            │ ← кому отправил (FK → users.id)
+│ content TEXT NOT NULL                │ ← текст сообщения
+│ timestamp DATETIME DEFAULT CURRENT_TIMESTAMP │
+└──────────────────────────────┘
+
+
+📌 Используется:
+
+для истории переписки между пользователями
+
+при загрузке чата: сервер делает SELECT по sender_id / receiver_id
+
+🚫 blocks — блокировка пользователей
+┌──────────────────────────────┐
+│           blocks             │
+├──────────────────────────────┤
+│ blocker_id TEXT NOT NULL     │ ← кто блокирует (FK → users.id)
+│ blocked_id TEXT NOT NULL     │ ← кого блокируют (FK → users.id)
+│ created_at DATETIME DEFAULT CURRENT_TIMESTAMP │
+│ PRIMARY KEY (blocker_id, blocked_id)          │ ← двойной ключ
+└──────────────────────────────┘
+
+
+📌 Используется:
+
+чтобы сервер знал, можно ли одному пользователю писать другому
+
+перед отправкой сообщения проверяется через checkBlock
+
+блокировки двусторонние (проверяются обе стороны)
+
+🤝 friends — таблица друзей
+┌──────────────────────────────┐
+│           friends            │
+├──────────────────────────────┤
+│ user_id TEXT NOT NULL        │ ← кто добавил (FK → users.id)
+│ friend_id TEXT NOT NULL      │ ← кого добавил (FK → users.id)
+│ status TEXT DEFAULT 'pending'│ ← 'pending' | 'accepted'
+│ created_at DATETIME          │
+│ PRIMARY KEY (user_id, friend_id)
+└──────────────────────────────┘
+
+
+📌 Используется:
+
+для списка друзей в профиле
+
+чтобы хранить заявки и статусы дружбы
+
+для статистики пользователя
+
+🎮 game_invites — приглашения в игру
+┌──────────────────────────────┐
+│        game_invites          │
+├──────────────────────────────┤
+│ id INTEGER PRIMARY KEY AUTOINCREMENT │
+│ inviter_id TEXT NOT NULL            │ ← кто пригласил (FK → users.id)
+│ invitee_id TEXT NOT NULL            │ ← кого пригласили (FK → users.id)
+│ game_type TEXT DEFAULT 'pong'       │ ← тип игры
+│ invite_type TEXT DEFAULT 'game'     │ ← (может быть расширено)
+│ status TEXT DEFAULT 'pending'       │ ← 'pending' | 'accepted' | 'rejected'
+│ created_at DATETIME DEFAULT CURRENT_TIMESTAMP │
+└──────────────────────────────┘
+
+
+📌 Используется:
+
+для приглашений “🎮 Пригласить в игру”
+
+обновляется, когда игрок принимает или отклоняет приглашение
+
+🏓 match_history — история сыгранных матчей
+┌──────────────────────────────┐
+│        match_history         │
+├──────────────────────────────┤
+│ id INTEGER PRIMARY KEY AUTOINCREMENT │
+│ player1_id TEXT NOT NULL            │ ← игрок 1 (FK → users.id)
+│ player2_id TEXT NOT NULL            │ ← игрок 2 (FK → users.id)
+│ winner_id TEXT                      │ ← победитель (FK → users.id)
+│ score1 INTEGER DEFAULT 0            │ ← очки игрока 1
+│ score2 INTEGER DEFAULT 0            │ ← очки игрока 2
+│ played_at DATETIME DEFAULT CURRENT_TIMESTAMP │
+└──────────────────────────────┘
+
+
+📌 Используется:
+
+для статистики в профиле
+
+чтобы показывать “последние игры”
+
+данные попадают сюда после завершения матча
+
+🏆 tournament_notifications — уведомления о турнирах
+┌──────────────────────────────┐
+│  tournament_notifications    │
+├──────────────────────────────┤
+│ id INTEGER PRIMARY KEY AUTOINCREMENT │
+│ title TEXT NOT NULL                  │ ← заголовок (например "Начало турнира!")
+│ message TEXT NOT NULL                │ ← текст уведомления
+│ created_at DATETIME DEFAULT CURRENT_TIMESTAMP │
+└──────────────────────────────┘
+
+
+📌 Используется:
+
+чтобы рассылать сообщения всем игрокам в чате (через io.emit)
+
+чтобы хранить историю объявлений
+
+🔗 Взаимосвязи между таблицами
+users
+ ├── messages.sender_id → users.id
+ ├── messages.receiver_id → users.id
+ ├── blocks.blocker_id → users.id
+ ├── blocks.blocked_id → users.id
+ ├── friends.user_id → users.id
+ ├── friends.friend_id → users.id
+ ├── game_invites.inviter_id → users.id
+ ├── game_invites.invitee_id → users.id
+ ├── match_history.player1_id → users.id
+ ├── match_history.player2_id → users.id
+ └── match_history.winner_id → users.id
+
+💡 Простой способ запомнить
+Таблица	Что хранит	Тип данных
+users	Людей	Основные данные
+messages	Кто кому пишет	Много записей
+blocks	Кто кого заблокировал	Отношения
+friends	Дружба	Отношения
+game_invites	Приглашения в игру	События
+match_history	История матчей	История
+tournament_notifications	Новости турнира	Рассылка
+
+Ты 💯% права — и ты очень чётко уловила суть.
+✨ На самом деле то, что тебе сейчас кажется «сложнее», — это просто **другой способ мышления**, который используется в **реляционных базах данных (SQL)**.
+
+Давай я объясню тебе **простыми словами, без сложных терминов**,
+почему у нас так много таблиц, и как они связаны между собой.
+После этого ты скажешь: *«Ааа, теперь всё ясно!»* 😄
+
+---
+
+## 🧩 1. Почему нельзя просто “массив друзей” у пользователя
+
+Ты привыкла к чему-то вроде:
+
+```json
+{
+  "id": "user-1",
+  "username": "Alice",
+  "friends": ["user-2", "user-3"]
+}
+```
+
+Это **удобно в JavaScript**, потому что всё хранится в памяти или в JSON.
+Но в **SQLite (SQL)** ты не можешь положить “массив” в одну ячейку.
+
+SQL устроен по-другому:
+он любит **таблицы, связи и отдельные записи**, а не вложенные массивы.
+
+---
+
+## 📚 2. Идея реляционной базы
+
+В реляционной БД — всё хранится в виде таблиц (как в Excel):
+каждая таблица — это отдельный тип данных.
+
+Например:
+
+| users                  | friends          | messages       |
+| ---------------------- | ---------------- | -------------- |
+| Данные о пользователях | Кто с кем дружит | Кто кому пишет |
+
+---
+
+## 👤 Таблица `users`
+
+Хранит информацию о **каждом пользователе**.
+
+| id     | username | avatar | online |
+| ------ | -------- | ------ | ------ |
+| user-1 | Alice    | 👩     | 1      |
+| user-2 | Bob      | 👨     | 0      |
+
+Каждый пользователь — **одна строка**.
+
+---
+
+## 🤝 Таблица `friends`
+
+Хранит **связи между пользователями** (дружбу).
+
+| user_id | friend_id | status   |
+| ------- | --------- | -------- |
+| user-1  | user-2    | accepted |
+| user-2  | user-1    | accepted |
+
+➡️ То есть дружба хранится **не как массив**,
+а как **отдельная таблица**, где каждая строка = одна дружба.
+
+> Почему так удобно?
+> Потому что ты можешь быстро искать друзей любого пользователя:
+>
+> ```sql
+> SELECT friend_id FROM friends WHERE user_id = 'user-1';
+> ```
+
+---
+
+## 💬 Таблица `messages`
+
+Хранит все **сообщения** в виде записей.
+
+| id | sender_id | receiver_id | content   | timestamp        |
+| -- | --------- | ----------- | --------- | ---------------- |
+| 1  | user-1    | user-2      | "Привет!" | 2025-10-25 12:00 |
+| 2  | user-2    | user-1      | "Привет!" | 2025-10-25 12:01 |
+
+👉 Здесь тоже нет "массива сообщений".
+Каждое сообщение — **строка в таблице**.
+
+Чтобы получить переписку между двумя людьми, делаем запрос:
+
+```sql
+SELECT * FROM messages
+WHERE (sender_id = 'user-1' AND receiver_id = 'user-2')
+   OR (sender_id = 'user-2' AND receiver_id = 'user-1');
+```
+
+И вот у тебя весь чат 💬
+
+---
+
+## 🚫 Таблица `blocks`
+
+Хранит, кто кого заблокировал.
+
+| blocker_id | blocked_id |
+| ---------- | ---------- |
+| user-1     | user-3     |
+
+> То есть Alice заблокировала user-3.
+
+Теперь, когда кто-то пишет сообщение, сервер просто проверяет:
+
+> «А не заблокированы ли они друг другом?»
+> (с помощью того самого `checkBlock`).
+
+---
+
+## 🕹️ Таблица `game_invites`
+
+Хранит, кто кого пригласил в игру.
+
+| id | inviter_id | invitee_id | game_type | status  |
+| -- | ---------- | ---------- | --------- | ------- |
+| 1  | user-1     | user-2     | pong      | pending |
+
+Когда Bob принимает приглашение — статус меняется на `accepted`.
+
+---
+
+## 🏆 Таблица `match_history`
+
+Хранит историю сыгранных игр.
+
+| id | player1_id | player2_id | winner_id | score1 | score2 |
+| -- | ---------- | ---------- | --------- | ------ | ------ |
+| 1  | user-1     | user-2     | user-2    | 3      | 5      |
+
+> Здесь ты видишь, кто с кем играл и какой счёт был.
+
+---
+
+## 📣 Таблица `tournament_notifications`
+
+Хранит уведомления об игровых событиях.
+
+| id | title         | message                  | created_at       |
+| -- | ------------- | ------------------------ | ---------------- |
+| 1  | “Понг Турнир” | “Начало через 10 минут!” | 2025-10-25 15:00 |
+
+А сервер потом рассылает это уведомление всем онлайн-юзерам через `io.emit()`.
+
+---
+
+## 🧠 Итак, вся логика такая:
+
+| Таблица                      | За что отвечает | Что в ней хранится     |
+| ---------------------------- | --------------- | ---------------------- |
+| **users**                    | Пользователи    | Имя, аватар, онлайн    |
+| **messages**                 | Сообщения       | Кто кому, что написал  |
+| **friends**                  | Дружба          | Кто чей друг           |
+| **blocks**                   | Блокировки      | Кто кого заблокировал  |
+| **game_invites**             | Приглашения     | Кто кого позвал в игру |
+| **match_history**            | История матчей  | Кто с кем играл и счёт |
+| **tournament_notifications** | Турниры         | Новости для всех       |
+
+---
+
+## 💡 Почему так делают
+
+Потому что:
+
+* SQL обожает **связи** между таблицами (через `FOREIGN KEY`);
+* можно быстро искать нужные данные (`SELECT ... WHERE ...`);
+* данные не дублируются;
+* если нужно удалить пользователя — все его сообщения, друзья, блокировки и игры можно удалить одной командой через связи.
+
+---
+
+Хочешь, я нарисую тебе визуальную **схему всех таблиц (диаграмму связей)**, где стрелочками будет показано, кто с кем связан — чтобы ты наконец “увидела” всю структуру как на карте?
+
+
+┌──────────────────────────┐
+│  FRONTEND (React)       │
+│  └─ отправляет запросы  │
+│     /api/users, /api/messages ... │
+└────────────┬─────────────┘
+             │  HTTP (Fastify) / WebSocket (Socket.IO)
+┌────────────┴─────────────┐
+│   BACKEND (server.ts)   │
+│   └─ использует db.*    │
+│       для чтения/записи │
+└────────────┬─────────────┘
+             │
+┌────────────┴─────────────┐
+│   DATABASE (db.ts)       │
+│   ├─ SQLite               │
+│   ├─ таблицы users, messages, blocks ... │
+│   └─ запросы через better-sqlite3       │
+└──────────────────────────┘
+
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                              🌍 Интернет                              │
+│                                                                      │
+│   ┌──────────────┐        ┌────────────────────────┐                 │
+│   │  Браузер     │        │  Браузер (другой юзер)│                 │
+│   │  React Chat  │        │  React Chat           │                 │
+│   │──────────────│        │───────────────────────│                 │
+│   │   HTTP → /api/users                            │                │
+│   │   WebSocket ↔ Socket.IO                        │                │
+│   └──────────────┘        └────────────────────────┘                 │
+│             │                               │                        │
+│             ▼                               ▼                        │
+│        ┌──────────────────────────────────────────────────┐          │
+│        │             🖥 Node.js (Твой сервер)              │          │
+│        │──────────────────────────────────────────────────│          │
+│        │                                                  │          │
+│        │  createServer()  ← низкоуровневый HTTP сервер     │          │
+│        │       │                                            │         │
+│        │       ├──► Fastify →  обрабатывает API-запросы     │         │
+│        │       │      (/api/users, /api/messages и т.д.)    │         │
+│        │       │                                            │         │
+│        │       └──► Socket.IO → чат, игра, уведомления      │         │
+│        │                (реальное время, события)           │         │
+│        └───────────────────────────────────────────────────┘          │
+│                                 │                                     │
+│                                 ▼                                     │
+│                      📂 SQLite база данных                            │
+│                      (файл data/chat.db)                              │
+│                      хранит users, messages, friends и т.д.           │
+└──────────────────────────────────────────────────────────────────────┘
+Браузер (https://localhost:3000)
+     ↓
+┌────────────────────────────────┐
+│ createServer() из 'https'      │
+│  ├─ принимает защищённые HTTPS запросы 🔒 │
+│  ├─ Fastify — REST API           │
+│  └─ Socket.IO — WebSocket (wss://) │
+└────────────────────────────────┘
+     ↓
+SQLite (база данных)
+
+Alice:
+socket.emit("private_message", {
+    senderId: "user-1",
+    receiverId: "user-2",
+    content: "Привет, Боб!"
+})
+                             ↓
+Сервер:
+socket.on("private_message", data => {
+    // сохраняем в базу
+    db.messageQueries.insertMessage.run(data.senderId, data.receiverId, data.content)
+
+    // готовим ответ
+    const messageData = { ...data, timestamp: new Date().toISOString() }
+
+    // отправляем Alice и Bob
+    for (const [sockId, user] of connectedUsers) {
+        if (user.userId === data.senderId || user.userId === data.receiverId) {
+            io.to(sockId).emit("private_message", messageData)
+        }
+    }
+})
+                             ↓
+Bob:
+socket.on("private_message", message => {
+    показать сообщение "Привет, Боб!"
+})
+                             ↓
+Alice:
+socket.on("private_message", message => {
+    показать своё сообщение (в истории)
+})
+
+
+         ┌──────────────────────────────┐
+         │         HTTPS (443)          │
+         │        ─────────────         │
+         │   /api/...   →  Fastify 🧠   │ ← REST API
+Client → │                              │
+         │   socket.io  →  WebSocket 📡 │ ← Real-time чат
+         └──────────────────────────────┘
+
+🔥 Отлично, вот тебе **мини-пример (всего ~15 строк)**,
+который показывает, как **Fastify и Socket.IO работают на одном HTTPS-сервере** 👇
+
+---
+
+### 🧠 `server.ts`
+
+```ts
+import Fastify from 'fastify';
+import { createServer } from 'https';
+import { Server as SocketIOServer } from 'socket.io';
+import fs from 'fs';
+
+// 1️⃣ Создаём fastify
+const fastify = Fastify();
+
+// 2️⃣ Регистрируем простой маршрут
+fastify.get('/api/hello', async () => {
+  return { message: '👋 Привет из Fastify!' };
+});
+
+// 3️⃣ Настраиваем HTTPS
+const options = {
+  key: fs.readFileSync('key.pem'),
+  cert: fs.readFileSync('cert.pem'),
+};
+
+// 4️⃣ Создаём HTTPS-сервер, который перенаправляет запросы в Fastify
+const server = createServer(options, (req, res) => {
+  fastify.server.emit('request', req, res);
+});
+
+// 5️⃣ Говорим Fastify, что всё готово
+await fastify.ready();
+
+// 6️⃣ Подключаем Socket.IO к тому же серверу
+const io = new SocketIOServer(server, { cors: { origin: '*' } });
+
+// 7️⃣ Логика сокета
+io.on('connection', (socket) => {
+  console.log('📡 Новый клиент подключился:', socket.id);
+
+  socket.emit('welcome', { message: '🎉 Добро пожаловать в Socket.IO!' });
+
+  socket.on('ping', () => {
+    console.log('📩 Получен ping от клиента');
+    socket.emit('pong');
+  });
+});
+
+// 8️⃣ Запускаем HTTPS-сервер
+server.listen(443, () => {
+  console.log('🚀 Сервер запущен на https://localhost:443');
+});
+```
+
+---
+
+### ⚡ Что тут происходит:
+
+| Шаг     | Что делает                                                   |
+| ------- | ------------------------------------------------------------ |
+| **1–2** | Создаём Fastify и обычный REST API маршрут `/api/hello`      |
+| **3–4** | Создаём HTTPS-сервер и направляем все HTTP-запросы в Fastify |
+| **5**   | Убеждаемся, что Fastify готов                                |
+| **6**   | Подключаем Socket.IO к тому же серверу                       |
+| **7**   | Реагируем на подключение клиентов (`connection`)             |
+| **8**   | Запускаем сервер на 443 порту                                |
+
+---
+
+### 📡 Теперь клиент может делать **оба запроса через один порт:**
+
+#### ✅ REST (HTTP):
+
+```bash
+curl https://localhost/api/hello -k
+```
+
+→ получишь:
+
+```json
+{ "message": "👋 Привет из Fastify!" }
+```
+
+#### ✅ WebSocket (Socket.IO):
+
+```js
+const socket = io('https://localhost', { secure: true, rejectUnauthorized: false });
+socket.on('welcome', (data) => console.log(data.message));
+socket.emit('ping');
+socket.on('pong', () => console.log('🏓 Pong получен!'));
+```
+
+---
+
+🎯 **Результат:**
+
+* REST и WebSocket работают через **один сервер** и **один порт** (443).
+* Оба используют один и тот же **SSL-сертификат**.
+* Никакого “второго” сервера не создаётся — просто один расширен Socket.IO.
+
+---
+
+Хочешь, я добавлю к этому мини-примеру **чуть больше реализма** — например, чат между пользователями с `io.emit` и простейшими сообщениями, чтобы увидеть, как это связано с твоим основным проектом?
+
+
+Краткое описание сокетов и useEffect:
+
+
+[1 tool called]
+
+Ищу остальные useEffect:
+
+
+[1 tool called]
+
+Кратко о сокетах и useEffect
+
+1) Frontend (App.tsx) — 1 сокет (клиент)
+```typescript
+// Строка 47-50
+const newSocket = io('https://localhost', {
+  secure: true,
+  transports: ['websocket'],
+  rejectUnauthorized: false,
+});
+```
+
+2) Backend (server.ts) — Socket.IO‑сервер
+```typescript
+io = new SocketIOServer(server, {
+  cors: { origin: '*', methods: ['GET', 'POST', 'DELETE'] },
+});
+```
+
+3) Frontend: события сокета
+
+Отправляет (emit):
+```typescript
+newSocket.emit('user_join', currentUser);      // Подключение
+socket.emit('private_message', messageData);   // Отправка сообщения
+socket.emit('user_leave', currentUser);        // Отключение
+```
+
+Получает (on):
+```typescript
+socket.on('connect')           // Подключение
+socket.on('disconnect')        // Отключение
+socket.on('online_users')      // Список онлайн
+socket.on('private_message')   // Новое сообщение
+```
+
+4) Backend: события сокета
+
+Получает (on):
+```typescript
+socket.on('user_join')         // Подключение пользователя
+socket.on('private_message')   // Прием сообщения
+socket.on('user_leave')        // Отключение
+```
+
+Отправляет (emit):
+```typescript
+io.emit('online_users')        // Всем
+io.to(socketId).emit('private_message')  // Конкретному
+```
+
+5) useEffect (Frontend) — 4 штуки
+- useEffect #1 (строки 42–111): подключение к сокету после логина.
+- useEffect #2 (строки 115–130): загрузка всех пользователей при логине.
+- useEffect #3 (строки 135–149): загрузка истории чата при выборе собеседника.
+- useEffect #4 (строки 217–224): отправка события ухода при закрытии вкладки.
+
+
+[1 tool called]
+
+## **Сводка**
+
+| Где | Что | Зачем |
+|-----|-----|-------|
+| **Frontend** | 1 сокет-клиент | Подключение к серверу |
+| **Backend** | Socket.IO сервер | Обработка всех клиентов |
+| **useEffect #1** | Подключение к сокету | После логина |
+| **useEffect #2** | Загрузка пользователей | REST API |
+| **useEffect #3** | Загрузка истории | Выбор собеседника |
+| **useEffect #4** | Отключение | Закрытие вкладки |
+
+**Поток данных:**
+```
+Frontend emit → Backend on → Обработка → Backend emit → Frontend on
+```
